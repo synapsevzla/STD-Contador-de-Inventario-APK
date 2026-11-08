@@ -1,12 +1,15 @@
 package com.std.inventario.data.model
 
 data class DatabaseConfig(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val alias: String = "",
     val server: String = "",
     val port: String = "1433",
     val instance: String = "",
     val database: String = "",
     val user: String = "",
-    val pass: String = ""
+    val pass: String = "",
+    val license: LicenseInfo? = null
 )
 
 data class Usuario(
@@ -42,6 +45,12 @@ data class ItemConteo(
     val existenciaActual: Double,
     val diferencia: Double,
     val codUsuaConteo: String?
+)
+
+data class ConteoStats(
+    val totalItems: Int = 0,
+    val conDiferencia: Int = 0,
+    val cuadrados: Int = 0
 )
 
 data class LicenseInfo(

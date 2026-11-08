@@ -3,6 +3,7 @@ package com.std.inventario.ui.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -14,29 +15,98 @@ fun NumericKeypad(
     onValueChange: (String) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
-    allowDecimals: Boolean = true
+    allowDecimals: Boolean = true,
+    title: String = "Ingresar Cantidad",
+    itemDescription: String? = null,
+    existenciaTeorica: Double? = null,
+    unidad: String = ""
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Ingresar Cantidad") },
+        title = {
+            Column {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (!itemDescription.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = itemDescription,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Normal,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2
+                    )
+                }
+            }
+        },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Display de cantidad actual
+                // Indicadores de Teórico y Diferencia en tiempo real
+                if (existenciaTeorica != null) {
+                    val currentContado = value.toDoubleOrNull() ?: 0.0
+                    val liveDif = currentContado - existenciaTeorica
+                    val (difColor, difText) = when {
+                        liveDif == 0.0 -> Pair(MaterialTheme.colorScheme.primary, "0.00 (Cuadra)")
+                        liveDif > 0.0 -> Pair(MaterialTheme.colorScheme.tertiary, "+${"%.2f".format(liveDif)} (Sobrante)")
+                        else -> Pair(MaterialTheme.colorScheme.error, "${"%.2f".format(liveDif)} (Faltante)")
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.small,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Teórico: $existenciaTeorica $unidad",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Dif: $difText",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = difColor
+                            )
+                        }
+                    }
+                }
+
+                // Display de cantidad actual contada
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer,
                     shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = if (value.isEmpty()) "0" else value,
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(16.dp)
-                    )
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Text(
+                            text = "Cantidad Contada",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+                        Text(
+                            text = if (value.isEmpty()) "0" else value,
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
                 }
 
                 // Botones Delta rápidos (+1, +5, +10, -1)

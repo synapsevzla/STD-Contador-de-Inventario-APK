@@ -7,10 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,20 +34,28 @@ fun LoginScreen(
     onOpenConfig: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
+    var connections by remember { mutableStateOf(prefs.getAllConnections()) }
+    var activeConnection by remember { mutableStateOf(prefs.getActiveConnection()) }
+    var expandedServerDropdown by remember { mutableStateOf(false) }
+
     var codUsua by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var clave by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-    var licenseInfo by remember { mutableStateOf<LicenseInfo?>(prefs.getLicenseInfo()) }
+    var licenseInfo by remember { mutableStateOf<LicenseInfo?>(activeConnection.license ?: prefs.getLicenseInfo()) }
 
-    // Validación periódica / silenciosa de licencia si hay BD configurada
+    // Refrescar lista de conexiones y validar licencia de la conexión activa al entrar
     LaunchedEffect(Unit) {
-        val config = prefs.getDatabaseConfig()
-        if (config.server.isNotBlank() && config.database.isNotBlank()) {
+        connections = prefs.getAllConnections()
+        activeConnection = prefs.getActiveConnection()
+        licenseInfo = activeConnection.license ?: prefs.getLicenseInfo()
+
+        if (activeConnection.server.isNotBlank() && activeConnection.database.isNotBlank()) {
             try {
-                val updated = LicenseService.validate(config, prefs, forceOnline = false)
+                val updated = LicenseService.validate(activeConnection, prefs, forceOnline = false)
                 licenseInfo = updated
+                connections = prefs.getAllConnections()
             } catch (_: Throwable) {}
         }
     }
@@ -101,6 +106,121 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            // Selector de Conexión / Servidor
+            if (connections.isEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            Icons.Default.Storage,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "No hay servidores configurados",
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(
+                            onClick = onOpenConfig,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Configurar Servidor")
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            } else {
+                ExposedDropdownMenuBox(
+                    expanded = expandedServerDropdown,
+                    onExpandedChange = { expandedServerDropdown = !expandedServerDropdown },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = activeConnection.alias.ifBlank { "Servidor ${activeConnection.server}" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Servidor de Conexión") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Storage, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedServerDropdown)
+                        },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth(),
+                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                    )
+
+                    ExposedDropdownMenu(
+                        expanded = expandedServerDropdown,
+                        onDismissRequest = { expandedServerDropdown = false }
+                    ) {
+                        connections.forEach { conn ->
+                            val isSelected = conn.id == activeConnection.id
+                            DropdownMenuItem(
+                                text = {
+                                    Column {
+                                        Text(
+                                            text = conn.alias.ifBlank { "Servidor ${conn.server}" },
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                        val subInfo = conn.license?.razonSocial ?: conn.license?.cliente ?: ""
+                                        if (subInfo.isNotBlank()) {
+                                            Text(
+                                                text = subInfo,
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                },
+                                leadingIcon = {
+                                    if (isSelected) {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    } else {
+                                        Icon(Icons.Default.Storage, contentDescription = null)
+                                    }
+                                },
+                                onClick = {
+                                    expandedServerDropdown = false
+                                    if (conn.id != activeConnection.id) {
+                                        prefs.setActiveConnectionId(conn.id)
+                                        activeConnection = conn
+                                        licenseInfo = conn.license ?: prefs.getLicenseInfo()
+                                        errorMessage = null
+
+                                        // Validar licencia del nuevo servidor seleccionado
+                                        coroutineScope.launch {
+                                            try {
+                                                val updated = LicenseService.validate(conn, prefs, forceOnline = false)
+                                                licenseInfo = updated
+                                                connections = prefs.getAllConnections()
+                                            } catch (_: Throwable) {}
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // Banner informativo de Licencia
             licenseInfo?.let { lic ->
                 when {
@@ -116,7 +236,7 @@ fun LoginScreen(
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
                                 Text(
-                                    text = lic.error ?: "Ingrese a Configuración para validar la licencia.",
+                                    text = lic.error ?: "Ingrese a Configuración para validar la licencia de este servidor.",
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.onErrorContainer
                                 )
@@ -202,7 +322,7 @@ fun LoginScreen(
 
             Button(
                 onClick = {
-                    val config = prefs.getDatabaseConfig()
+                    val config = prefs.getActiveConnection()
                     if (config.server.isBlank()) {
                         errorMessage = "Configure los parámetros de SQL Server primero"
                         onOpenConfig()
@@ -260,3 +380,4 @@ fun LoginScreen(
         }
     }
 }
+

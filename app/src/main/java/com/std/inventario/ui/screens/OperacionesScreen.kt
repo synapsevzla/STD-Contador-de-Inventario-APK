@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,6 +20,8 @@ import androidx.compose.ui.unit.sp
 import com.std.inventario.data.model.OperacionConteo
 import com.std.inventario.data.preferences.PreferencesManager
 import com.std.inventario.data.repository.InventoryRepository
+import com.std.inventario.ui.components.CleanUncountedDialog
+import com.std.inventario.ui.components.DeleteOperationDialog
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -27,9 +32,21 @@ fun OperacionesScreen(
     onLogout: () -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+
     var operaciones by remember { mutableStateOf<List<OperacionConteo>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // Control del diálogo de limpieza de no contados
+    var opToClean by remember { mutableStateOf<OperacionConteo?>(null) }
+    var isCleaning by remember { mutableStateOf(false) }
+    var cleanError by remember { mutableStateOf<String?>(null) }
+
+    // Control del diálogo de eliminación total de la operación
+    var opToDelete by remember { mutableStateOf<OperacionConteo?>(null) }
+    var isDeleting by remember { mutableStateOf(false) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
 
     fun loadData() {
         isLoading = true
@@ -52,6 +69,7 @@ fun OperacionesScreen(
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Operaciones de Inventario") },
@@ -60,7 +78,7 @@ fun OperacionesScreen(
                         Icon(Icons.Default.Refresh, contentDescription = "Refrescar")
                     }
                     IconButton(onClick = onLogout) {
-                        Icon(Icons.Default.ExitToApp, contentDescription = "Cerrar Sesión")
+                        Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Cerrar Sesión")
                     }
                 }
             )
@@ -139,12 +157,146 @@ fun OperacionesScreen(
                                             color = MaterialTheme.colorScheme.outline
                                         )
                                     }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Barra de acciones por comprobante
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            // Limpiar artículos no contados
+                                            OutlinedButton(
+                                                onClick = {
+                                                    opToClean = op
+                                                    cleanError = null
+                                                },
+                                                colors = ButtonDefaults.outlinedButtonColors(
+                                                    contentColor = MaterialTheme.colorScheme.error
+                                                ),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.DeleteSweep,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Limpiar", fontSize = 12.sp)
+                                            }
+
+                                            // Eliminar Operación completa
+                                            OutlinedButton(
+                                                onClick = {
+                                                    opToDelete = op
+                                                    deleteError = null
+                                                },
+                                                colors = ButtonDefaults.outlinedButtonColors(
+                                                    contentColor = MaterialTheme.colorScheme.error
+                                                ),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.DeleteForever,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Eliminar", fontSize = 12.sp)
+                                            }
+                                        }
+
+                                        Button(
+                                            onClick = { onSelectOperacion(op.numeroD) },
+                                            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                        ) {
+                                            Text("Contar", fontSize = 13.sp)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                Icons.AutoMirrored.Filled.ArrowForward,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+
+        // Diálogo de Confirmación para Limpieza de Items No Contados
+        opToClean?.let { targetOp ->
+            CleanUncountedDialog(
+                numeroD = targetOp.numeroD,
+                depositoNombre = targetOp.deposito,
+                isCleaning = isCleaning,
+                cleanError = cleanError,
+                onConfirm = {
+                    isCleaning = true
+                    cleanError = null
+                    coroutineScope.launch {
+                        try {
+                            val repo = InventoryRepository(prefs.getDatabaseConfig())
+                            val deletedCount = repo.cleanUncountedItems(targetOp.numeroD)
+                            opToClean = null
+                            loadData()
+                            snackbarHostState.showSnackbar(
+                                "Se eliminaron $deletedCount artículos no contados de la operación #${targetOp.numeroD}."
+                            )
+                        } catch (t: Throwable) {
+                            val msg = t.localizedMessage ?: t.message ?: t.javaClass.simpleName
+                            cleanError = "Error al limpiar operación: $msg"
+                        } finally {
+                            isCleaning = false
+                        }
+                    }
+                },
+                onDismiss = {
+                    opToClean = null
+                    cleanError = null
+                }
+            )
+        }
+
+        // Diálogo de Confirmación para Eliminación Total de la Operación
+        opToDelete?.let { targetOp ->
+            DeleteOperationDialog(
+                numeroD = targetOp.numeroD,
+                depositoNombre = targetOp.deposito,
+                isDeleting = isDeleting,
+                deleteError = deleteError,
+                onConfirm = {
+                    isDeleting = true
+                    deleteError = null
+                    coroutineScope.launch {
+                        try {
+                            val repo = InventoryRepository(prefs.getDatabaseConfig())
+                            repo.deleteOperacionCompleta(targetOp.numeroD)
+                            opToDelete = null
+                            loadData()
+                            snackbarHostState.showSnackbar(
+                                "Se eliminó por completo la operación #${targetOp.numeroD} y todos sus artículos."
+                            )
+                        } catch (t: Throwable) {
+                            val msg = t.localizedMessage ?: t.message ?: t.javaClass.simpleName
+                            deleteError = "Error al eliminar operación: $msg"
+                        } finally {
+                            isDeleting = false
+                        }
+                    }
+                },
+                onDismiss = {
+                    opToDelete = null
+                    deleteError = null
+                }
+            )
         }
     }
 }
